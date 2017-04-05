@@ -306,12 +306,13 @@ describe( 'repeat functionality', function() {
         //note that this form contains multiple repeats in the instance
         form = loadForm( 'nested_repeats.xml' );
         form.init();
-        var formH = form.getView(),
-            $1stLevelTargetRepeat = formH.$.find( '.or-repeat[name="/nested_repeats/kids/kids_details"]' ).eq( 1 ),
-            $2ndLevelTargetRepeats = $1stLevelTargetRepeat.find( '.or-repeat[name="/nested_repeats/kids/kids_details/immunization_info"]' );
-
-        expect( $1stLevelTargetRepeat.length ).toEqual( 1 );
-        expect( $2ndLevelTargetRepeats.length ).toEqual( 3 );
+        var formH = form.getView();
+        var $1stLevelTargetRepeat = formH.$.find( '.or-repeat[name="/nested_repeats/kids/kids_details"]' );
+        var $2ndLevelTargetRepeats1 = $1stLevelTargetRepeat.eq( 0 ).find( '.or-repeat[name="/nested_repeats/kids/kids_details/immunization_info"]' );
+        var $2ndLevelTargetRepeats2 = $1stLevelTargetRepeat.eq( 1 ).find( '.or-repeat[name="/nested_repeats/kids/kids_details/immunization_info"]' );
+        expect( $1stLevelTargetRepeat.length ).toEqual( 2 );
+        expect( $2ndLevelTargetRepeats1.length ).toEqual( 2 );
+        expect( $2ndLevelTargetRepeats2.length ).toEqual( 3 );
     } );
 
     xit( 'doesn\'t duplicate date widgets in a cloned repeat', function() {
@@ -1109,7 +1110,7 @@ describe( 'required enketo-transformer version', function() {
         var actual = Form.getRequiredTransformerVersion();
 
         expect( actual ).toBe( expected,
-                'It looks like enketo-transformer has been updated in package.json from ' + actual + ' to ' + expected + '.  ' +
-                'You also need to update the value returned by From.getRequiredTransformerVersion() to the new version number.');
+            'It looks like enketo-transformer has been updated in package.json from ' + actual + ' to ' + expected + '.  ' +
+            'You also need to update the value returned by From.getRequiredTransformerVersion() to the new version number.' );
     } );
 } );
