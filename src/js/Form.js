@@ -1732,11 +1732,26 @@ define( function( require, exports, module ) {
                 var that = this;
                 var $repeats = $form.find( '.or-repeat' );
 
+                this.templates = {};
                 this.formO = formO;
                 $repeats.prepend( '<span class="repeat-number"></span>' );
                 $repeats.filter( '*:not([data-repeat-fixed]):not([data-repeat-count])' )
                     .append( '<div class="repeat-buttons"><button type="button" class="btn btn-default repeat"><i class="icon icon-plus"> </i></button>' +
                         '<button type="button" disabled class="btn btn-default remove"><i class="icon icon-minus"> </i></button></div>' );
+
+                /**
+                 * Clone all repeats to serve as templates
+                 * in reverse document order to properly deal with nested repeat templates
+                 *
+                 * Widgets not yet initialized. Values not yet set.
+                 */
+                // 
+                $repeats.clone( false ).reverse().each( function() {
+                    var $templateEl = $( this );
+                    var xPath = $templateEl.attr( 'name' );
+                    that.templates[ xPath ] = $templateEl;
+                } );
+
                 $repeats.filter( '*:not([data-repeat-count])' ).each( function() {
                     // If there is no repeat-count attribute, check how many repeat instances 
                     // are in the model, and update view if necessary.
