@@ -1745,8 +1745,7 @@ define( function( require, exports, module ) {
                  *
                  * Widgets not yet initialized. Values not yet set.
                  */
-                // 
-                $repeats.clone( false ).reverse().each( function() {
+                $repeats.clone().reverse().each( function() {
                     var $templateEl = $( this );
                     var xPath = $templateEl.attr( 'name' );
                     that.templates[ xPath ] = $templateEl;
@@ -1853,7 +1852,7 @@ define( function( require, exports, module ) {
                 var $master;
                 var $clone;
                 var $repeatsToUpdate;
-                var $radiocheckbox;
+                //var $radiocheckbox;
                 var index;
                 var total;
                 var path;
@@ -1867,18 +1866,18 @@ define( function( require, exports, module ) {
                     return false;
                 }
 
+                path = $node.attr( 'name' );
                 $siblings = $node.siblings( '.or-repeat' );
-                $master = ( $node.hasClass( 'clone' ) ) ? $siblings.not( '.clone' ).eq( 0 ) : $node;
-                $clone = $master.clone( true, true );
-                path = $master.attr( 'name' );
+                $master = this.templates[ path ]; //( $node.hasClass( 'clone' ) ) ? $siblings.not( '.clone' ).eq( 0 ) : $node;
+                $clone = $master.clone();
 
                 // Add clone class and remove any child clones.. (cloned repeats within repeats..)
-                $clone.addClass( 'clone' ).find( '.clone' ).remove();
+                $clone.addClass( 'clone' ) /*.find( '.clone' ).remove()*/ ;
 
                 // Mark all cloned fields as valid
-                $clone.find( '.invalid-required, .invalid-constraint' ).find( 'input, select, textarea' ).each( function() {
-                    that.formO.setValid( $( this ) );
-                } );
+                //$clone.find( '.invalid-required, .invalid-constraint' ).find( 'input, select, textarea' ).each( function() {
+                //    that.formO.setValid( $( this ) );
+                //} );
 
                 // Note: in http://formhub.org/formhub_u/forms/hh_polio_survey_cloned/form.xml a parent group of a repeat
                 // has the same ref attribute as the nodeset attribute of the repeat. This would cause a problem determining
@@ -1886,7 +1885,7 @@ define( function( require, exports, module ) {
                 index = $form.find( '.or-repeat[name="' + path + '"]' ).index( $node );
 
                 // clear the inputs before adding clone
-                $clone.clearInputs( '' );
+                //$clone.clearInputs( '' );
 
                 total = count + index;
 
@@ -1897,9 +1896,9 @@ define( function( require, exports, module ) {
                     $clone.find( '.option-wrapper' ).each( this.fixRadioNames );
 
                     // Destroy widgets before inserting the clone
-                    if ( widgets.hasInitialized() ) {
-                        widgets.destroy( $clone );
-                    }
+                    //if ( widgets.hasInitialized() ) {
+                    //    widgets.destroy( $clone );
+                    //}
 
                     // Insert the clone after values and widgets have been reset
                     $clone.insertAfter( $node );
@@ -1916,9 +1915,9 @@ define( function( require, exports, module ) {
                     // Remove data-checked attributes for non-checked radio buttons and checkboxes
                     // Add data-checked attributes for checked ones.
                     // This actually belongs in the radio widget
-                    $radiocheckbox = $clone.find( '[type="radio"],[type="checkbox"]' );
-                    $radiocheckbox.parent( 'label' ).removeAttr( 'data-checked' );
-                    $radiocheckbox.filter( ':checked' ).parent( 'label' ).attr( 'data-checked', 'true' );
+                    //$radiocheckbox = $clone.find( '[type="radio"],[type="checkbox"]' );
+                    //$radiocheckbox.parent( 'label' ).removeAttr( 'data-checked' );
+                    //$radiocheckbox.filter( ':checked' ).parent( 'label' ).attr( 'data-checked', 'true' );
 
                     // Re-initiatalize widgets in clone after default values have been set
                     if ( widgets.hasInitialized() ) {
@@ -1934,7 +1933,7 @@ define( function( require, exports, module ) {
                     }
 
                     $siblings = $siblings.add( $clone );
-                    $clone = $clone.clone();
+                    $clone = this.templates[ path ].clone();
                 }
 
                 $repeatsToUpdate = $siblings.add( $node ).add( $siblings.find( '.or-repeat' ) );
