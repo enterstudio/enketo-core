@@ -1831,7 +1831,7 @@ define( function( require, exports, module ) {
                     that.clone( $info, toCreate );
                 } else if ( toCreate < 0 ) {
                     // We cannot remove the first repeat (yet)
-                    toCreate = Math.abs( toCreate ) > ( numRepsInView - 1 ) ? -numRepsInView + 1 : toCreate;
+                    toCreate = Math.abs( toCreate ) > numRepsInView ? -numRepsInView : toCreate;
                     for ( ; toCreate < 0; toCreate++ ) {
                         $last = $info.siblings( '.or-repeat' ).last();
                         this.remove( $last, 0 );
