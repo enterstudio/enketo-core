@@ -1716,12 +1716,12 @@ define( function( require, exports, module ) {
         /**
          * Variable: repeat
          *
-         * This can perhaps be simplified and improved by:
-         * - adding a function repeat.update() that looks at the instance whether to add repeat form fields
-         * - calling update from init() (model.init() is called before form.init() so the initial repeats have been added already)
-         * - when button is clicked model.node().clone() or model.node().remove() is called first and then repeat.update()
-         * - watch out though when repeats in the middle are removed... or just disable that possibility
+         * Two important concepts are used:
+         * 1. The first XLST-added repeat view is cloned to serve as a template of that repeat.
+         * 2. Each repeat series has a sibling .or-repeat-info element that stores info that is relevant to that series.
          *
+         * Note that with nested repeats you may have many more series of repeats than templates, because a nested repeat
+         * may have multiple series.
          */
         FormView.prototype.repeat = {
             /**
@@ -1730,12 +1730,29 @@ define( function( require, exports, module ) {
              */
             init: function( formO ) {
                 var that = this;
-                var $repeats = $form.find( '.or-repeat' );
+                var $repeatInfos;
 
+                // TODO: move to XSLT
+                $form.find( '.or-repeat' ).each( function() {
+                    var $r = $( this );
+                    var $info = $( '<div class="or-repeat-info" data-name="' + $r.attr( 'name' ) + '" />' );
+                    if ( $r.attr( 'data-repeat-count' ) ) {
+                        $info.attr( 'data-repeat-count', $r.attr( 'data-repeat-count' ) );
+                        $r.removeAttr( 'data-repeat-count' );
+                    }
+                    if ( $r.attr( 'data-repeat-fixed' ) ) {
+                        $info.attr( 'data-repeat-fixed', $r.attr( 'data-repeat-fixed' ) );
+                        $r.removeAttr( 'data-repeat-fixed' );
+                    }
+                    $r.after( $info );
+                } );
+
+                $repeatInfos = $form.find( '.or-repeat-info' );
                 this.templates = {};
                 this.formO = formO;
-                $repeats.prepend( '<span class="repeat-number"></span>' );
-                $repeats.filter( '*:not([data-repeat-fixed]):not([data-repeat-count])' )
+                $repeatInfos.siblings( '.or-repeat' )
+                    .prepend( '<span class="repeat-number"></span>' );
+                $repeatInfos.filter( '*:not([data-repeat-fixed]):not([data-repeat-count])' ).siblings( '.or-repeat' )
                     .append( '<div class="repeat-buttons"><button type="button" class="btn btn-default repeat"><i class="icon icon-plus"> </i></button>' +
                         '<button type="button" disabled class="btn btn-default remove"><i class="icon icon-minus"> </i></button></div>' );
 
@@ -1745,13 +1762,14 @@ define( function( require, exports, module ) {
                  *
                  * Widgets not yet initialized. Values not yet set.
                  */
-                $repeats.clone().reverse().each( function() {
+                $repeatInfos.siblings( '.or-repeat' ).clone().reverse().each( function() {
                     var $templateEl = $( this );
                     var xPath = $templateEl.attr( 'name' );
                     that.templates[ xPath ] = $templateEl;
                 } );
 
-                $repeats.filter( '*:not([data-repeat-count])' ).each( function() {
+                $repeatInfos.filter( '*:not([data-repeat-count])' ).each( function() {
+                    console.log( 'checking', this );
                     // If there is no repeat-count attribute, check how many repeat instances 
                     // are in the model, and update view if necessary.
                     that.updateViewInstancesFromModel( $( this ) );
@@ -1761,7 +1779,7 @@ define( function( require, exports, module ) {
                 // delegated handlers (strictly speaking not required, but checked for doubling of events -> OK)
                 $form.on( 'click', 'button.repeat:enabled', function() {
                     // Create a clone
-                    that.clone( $( this ).closest( '.or-repeat' ) );
+                    that.clone( $( this ).closest( '.or-repeat' ).siblings( '.or-repeat-info' ).eq( 0 ) );
                     // Prevent default
                     return false;
                 } );
@@ -1774,52 +1792,56 @@ define( function( require, exports, module ) {
 
                 this.countUpdate();
             },
-            updateViewInstancesFromModel: function( $repeat ) {
+            updateViewInstancesFromModel: function( $repeatInfo ) {
                 var that = this;
-                var name = $repeat.attr( 'name' );
-                var index = $form.find( '.or-repeat[name="' + name + '"]' ).index( $repeat );
+                var name = $repeatInfo.data( 'name' );
+                // For index, all we need is to find out in which series we are. The index of any repeat in that series will do.
+                var index = $form.find( '.or-repeat[name="' + name + '"]' ).index( $repeatInfo.siblings( '.or-repeat' ).first() );
                 var repInModelSeries = model.node( name, index ).getRepeatSeries();
-                var repInViewSeries = $repeat.siblings( '.or-repeat' ).addBack();
+                var repInViewSeries = $repeatInfo.siblings( '.or-repeat' );
+
+                console.log( repInModelSeries.length, repInViewSeries.length );
                 // First rep is already included (by XSLT transformation)
                 if ( repInModelSeries.length > repInViewSeries.length ) {
-                    this.clone( $repeat, repInModelSeries.length - repInViewSeries.length );
+                    this.clone( $repeatInfo, repInModelSeries.length - repInViewSeries.length );
                     // Now check the repeat counts of all the descendants of this repeat and its new siblings, level-by-level.
                     // TODO: this does not find .or-repeat > .or-repeat (= unusual syntax)
-                    $repeat.siblings( '.or-repeat' ).addBack()
+                    $repeatInfo.siblings( '.or-repeat' )
                         .children( '.or-group, .or-group-data' )
-                        .children( '.or-repeat:not([data-repeat-count])' )
+                        .children( '.or-repeat-info:not([data-repeat-count])' )
                         .each( function() {
                             that.updateViewInstancesFromModel( $( this ) );
                         } );
                 }
             },
-            updateRepeatInstancesFromCount: function( $repeat ) {
+            updateRepeatInstancesFromCount: function( $info ) {
                 var that = this;
-                var $last;
-                var repCountPath = $repeat.attr( 'data-repeat-count' ) || '';
-                var name = $repeat.attr( 'name' );
-                var index = $form.find( '.or-repeat[name="' + name + '"]' ).index( $repeat );
+                var $last = $info.siblings( '.or-repeat' ).last();
+                var repCountPath = $info.data( 'repeatCount' ) || '';
+                var name = $info.data( 'name' );
+                var index = $form.find( '.or-repeat[name="' + name + '"]' ).index( $last );
                 var numRepsInCount = ( repCountPath.length > 0 ) ? model.evaluate( repCountPath, 'number', name, index, true ) : 0;
-                var numRepsInView = $repeat.siblings( '.or-repeat[name="' + name + '"]' ).length + 1;
+                var numRepsInView = $info.siblings( '.or-repeat[name="' + name + '"]' ).length;
                 var toCreate = numRepsInCount - numRepsInView;
 
+                console.log( 'to create', toCreate );
                 // First rep is already included (by XSLT transformation)
                 if ( toCreate > 0 ) {
-                    $last = $repeat.siblings().addBack().last();
-                    that.clone( $last, toCreate );
+                    //$last = $series.last();
+                    that.clone( $info, toCreate );
                 } else if ( toCreate < 0 ) {
                     // We cannot remove the first repeat (yet)
                     toCreate = Math.abs( toCreate ) > ( numRepsInView - 1 ) ? -numRepsInView + 1 : toCreate;
                     for ( ; toCreate < 0; toCreate++ ) {
-                        $last = $repeat.siblings( '.or-repeat[name="' + name + '"]' ).addBack().last();
+                        $last = $info.siblings( '.or-repeat' ).last();
                         this.remove( $last, 0 );
                     }
                 }
                 // Now check the repeat counts of all the descendants of this repeat and its new siblings, level-by-level.
                 // TODO: this does not find .or-repeat > .or-repeat (= unusual syntax)
-                $repeat.siblings( '.or-repeat' ).addBack()
+                $info.siblings( '.or-repeat' )
                     .children( '.or-group, .or-group-data' )
-                    .children( '.or-repeat[data-repeat-count]' )
+                    .children( '.or-repeat-info[data-repeat-count]' )
                     .each( function() {
                         that.updateRepeatInstancesFromCount( $( this ) );
                     } );
@@ -1832,13 +1854,13 @@ define( function( require, exports, module ) {
              * @return {[type]}         [description]
              */
             countUpdate: function( updated ) {
-                var $nodes;
+                var $repeatInfos;
                 var that = this;
 
                 updated = updated || {};
-                $nodes = this.formO.getRelatedNodes( 'data-repeat-count', '.or-repeat:not(.clone)', updated );
+                $repeatInfos = this.formO.getRelatedNodes( 'data-repeat-count', '.or-repeat-info', updated );
 
-                $nodes.each( function() {
+                $repeatInfos.each( function() {
                     that.updateRepeatInstancesFromCount( $( this ) );
                 } );
             },
@@ -1848,8 +1870,8 @@ define( function( require, exports, module ) {
              * @param   {number=} count number of clones to create
              * @return  {boolean}       [description]
              */
-            clone: function( $node, count ) {
-                var $siblings;
+            clone: function( $info, count ) {
+                var $repeats;
                 var $master;
                 var $clone;
                 var $repeatsToUpdate;
@@ -1862,13 +1884,13 @@ define( function( require, exports, module ) {
 
                 count = count || 1;
 
-                if ( $node.length !== 1 ) {
+                if ( $info.length !== 1 ) {
                     console.error( 'Nothing to clone' );
                     return false;
                 }
 
-                path = $node.attr( 'name' );
-                $siblings = $node.siblings( '.or-repeat' );
+                path = $info.data( 'name' );
+                $repeats = $info.siblings( '.or-repeat' );
                 $master = this.templates[ path ]; //( $node.hasClass( 'clone' ) ) ? $siblings.not( '.clone' ).eq( 0 ) : $node;
                 $clone = $master.clone();
 
@@ -1880,10 +1902,11 @@ define( function( require, exports, module ) {
                 //    that.formO.setValid( $( this ) );
                 //} );
 
+                // Determine the index of the last repeat in the series where the new repeat will be added to.
                 // Note: in http://formhub.org/formhub_u/forms/hh_polio_survey_cloned/form.xml a parent group of a repeat
                 // has the same ref attribute as the nodeset attribute of the repeat. This would cause a problem determining
                 // the proper index if .or-repeat was not included in the selector
-                index = $form.find( '.or-repeat[name="' + path + '"]' ).index( $node );
+                index = $form.find( '.or-repeat[name="' + path + '"]' ).index( $repeats.last() );
 
                 // clear the inputs before adding clone
                 //$clone.clearInputs( '' );
@@ -1902,7 +1925,7 @@ define( function( require, exports, module ) {
                     //}
 
                     // Insert the clone after values and widgets have been reset
-                    $clone.insertAfter( $node );
+                    $clone.insertAfter( $repeats.last() );
 
                     // Create a new data point in <instance> by cloning the template node
                     // and clone data node if it doesn't already exist
@@ -1933,11 +1956,11 @@ define( function( require, exports, module ) {
                         } );
                     }
 
-                    $siblings = $siblings.add( $clone );
-                    $clone = this.templates[ path ].clone();
+                    $repeats = $repeats.add( $clone );
+                    $clone = this.templates[ path ].clone().addClass( 'clone' );
                 }
 
-                $repeatsToUpdate = $siblings.add( $node ).add( $siblings.find( '.or-repeat' ) );
+                $repeatsToUpdate = $repeats.add( $repeats.find( '.or-repeat' ) );
 
                 // number the repeats
                 this.numberRepeats( $repeatsToUpdate );
