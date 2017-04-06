@@ -1779,9 +1779,10 @@ define( function( require, exports, module ) {
                 var name = $repeat.attr( 'name' );
                 var index = $form.find( '.or-repeat[name="' + name + '"]' ).index( $repeat );
                 var repInModelSeries = model.node( name, index ).getRepeatSeries();
+                var repInViewSeries = $repeat.siblings( '.or-repeat' ).addBack();
                 // First rep is already included (by XSLT transformation)
-                if ( repInModelSeries.length > 1 ) {
-                    this.clone( $repeat, repInModelSeries.length - 1 );
+                if ( repInModelSeries.length > repInViewSeries.length ) {
+                    this.clone( $repeat, repInModelSeries.length - repInViewSeries.length );
                     // Now check the repeat counts of all the descendants of this repeat and its new siblings, level-by-level.
                     // TODO: this does not find .or-repeat > .or-repeat (= unusual syntax)
                     $repeat.siblings( '.or-repeat' ).addBack()
