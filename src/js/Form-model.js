@@ -12,6 +12,7 @@ define( function( require, exports, module ) {
     var Promise = require( 'lie' );
     var FormLogicError = require( './Form-logic-error' );
     var config = require( 'text!enketo-config' );
+    var REPEAT_COMMENT_PREFIX = 'enketo-repeat:';
     require( './plugins' );
     require( './extend' );
 
@@ -543,37 +544,52 @@ define( function( require, exports, module ) {
         return n;
     };
 
+    FormModel.prototype.getRepeatCommentText = function( path ) {
+        path = path.trim();
+        return REPEAT_COMMENT_PREFIX + path;
+    };
+
+    FormModel.prototype.getRepeatCommentEl = function( repeatPath, repeatSeriesIndex ) {
+        var xPath = '//comment()[self::comment()="' + this.getRepeatCommentText( repeatPath ) + '"]';
+        return this.evaluate( xPath, 'nodes', null, null, true )[ repeatSeriesIndex ];
+    };
+
     /**
      * Clones a <repeat>able instance node. If a template exists it will use this, otherwise it will clone an empty version of the first repeat node.
      * If the node with the specified index already exists, this function will do nothing.
      *
-     * @param  {string} selector selector of a repeat or a node that is contained inside a repeat
-     * @param  {number} index    index of the repeat that the new repeat should be inserted after.
+     * @param  {string} repeatPath absolute path of a repeat 
+     * @param  {number} repeatSeriesIndex    index of the repeat series that gets a new repeat (this is always 0 for non-nested repeats)
      * @param  {boolean} merge   whether this operation is part of a merge operation (won't send dataupdate event, clears all values and 
      *                           will not add ordinal attributes as these should be provided in the record)
      */
-    FormModel.prototype.cloneRepeat = function( selector, index, merge ) {
+    FormModel.prototype.cloneRepeat = function( repeatPath, repeatSeriesIndex, merge ) {
         var name;
         var $insertAfterNode;
-        var $nextSiblingsSameName;
-        var repeatNode;
+        //var $nextSiblingsSameName;
+        var repeatCommentEl;
         var allClonedNodeNames;
         var $templateClone;
-        var jrTemplate = !!this.templates[ selector ];
+        var jrTemplate = !!this.templates[ repeatPath ];
         var firstRepeatInSeries;
         var repeatSeries;
-        var $template = this.templates[ selector ] || this.node( selector, 0 ).get();
+        var $template = this.templates[ repeatPath ] || this.node( repeatPath, 0 ).get(); // TODO: templates should be populate with non-jr:template repeats
         var that = this;
         var enkNs = this.getNamespacePrefix( that.ENKETO_XFORMS_NS );
 
         // The replace() is done because jQuery doesn't work with selectors containing non-escaped dots.
         // It would be better to eliminate jQuery in the model and use the XPath evaluator instead.
-        name = $template.prop( 'nodeName' ).replace( /\./g, '\\.' );
-        repeatNode = this.node( selector, index );
-        $insertAfterNode = repeatNode.get();
+        //name = $template.prop( 'nodeName' ).replace( /\./g, '\\.' );
+        repeatCommentEl = this.getRepeatCommentEl( repeatPath, repeatSeriesIndex );
 
-        repeatSeries = repeatNode.getRepeatSeries();
+        console.debug( 'repeatCommentEl', repeatCommentEl );
+        //this.node( selector, index );
+        //$insertAfterNode = repeatNode.get();
+
+        repeatSeries = this.getRepeatSeries( repeatCommentEl );
         firstRepeatInSeries = repeatSeries[ 0 ];
+
+        $insertAfterNode = ( repeatSeries.length ) ? $( repeatSeries[ repeatSeries.length - 1 ] ) : $( repeatCommentEl );
 
         /**
          * getAttributeNs and setAttributeNs results in duplicate namespace declarations on each repeat node in IE11 when serializing the model.
@@ -611,7 +627,7 @@ define( function( require, exports, module ) {
         }
 
         // TODO: create a more XML friendly alternative nodeSet.prototype.nextAll
-        $nextSiblingsSameName = $insertAfterNode.nextAll( name );
+        //$nextSiblingsSameName = $insertAfterNode.nextAll( name );
 
         // if not exists and not a merge operation
         if ( !merge ) {
@@ -626,7 +642,8 @@ define( function( require, exports, module ) {
          * Strictly speaking using .next() is more efficient, but we use .nextAll() in case the document order has changed due to 
          * incorrect merging of an existing record.
          */
-        if ( $template[ 0 ] && $insertAfterNode.length === 1 && $nextSiblingsSameName.length === 0 ) {
+        console.log( 'ready to clone in model', $template[ 0 ], $insertAfterNode );
+        if ( $template[ 0 ] && $insertAfterNode.length === 1 /*&& $nextSiblingsSameName.length === 0*/ ) {
             $templateClone = $template.clone()
                 .insertAfter( $insertAfterNode );
 
@@ -655,18 +672,65 @@ define( function( require, exports, module ) {
 
                 this.$events.trigger( 'dataupdate', {
                     nodes: allClonedNodeNames,
-                    repeatPath: selector,
-                    repeatIndex: that.node( selector, index ).determineIndex( $templateClone ),
+                    repeatPath: repeatPath,
+                    repeatIndex: that.determineIndex( $templateClone ),
                     cloned: true
                 } );
             }
         } else {
-            if ( $nextSiblingsSameName.length === 0 ) {
-                console.error( 'Could not find template node and/or node to insert the clone after' );
-            }
+            //if ( $nextSiblingsSameName.length === 0 ) {
+            console.error( 'Could not find template node and/or node to insert the clone after' );
+            //}
         }
     };
 
+    // Obtains all the siblings with the same name and itself
+    FormModel.prototype.getRepeatSeries = function( repeatCommentEl ) {
+        //var repeatEl = this.get().get( 0 );
+        //var checkEl = repeatEl.previousSibling;
+        var pathSegments = repeatCommentEl.textContent.substr( REPEAT_COMMENT_PREFIX.length ).split( '/' );
+        var nodeName = pathSegments[ pathSegments.length - 1 ];
+        console.debug( 'nodeName', nodeName );
+        var result = [];
+        var checkEl = repeatCommentEl.nextSibling;
+
+        // then add all subsequent repeats
+        while ( checkEl ) {
+            // Ignore any sibling text and comment nodes (e.g. whitespace with a newline character)
+            // also deal with repeats that have non-repeat siblings in between them, event though that would be a bug.
+            if ( checkEl.nodeName && checkEl.nodeName === nodeName ) {
+                result.push( checkEl );
+            }
+            checkEl = checkEl.nextSibling;
+        }
+
+        return result;
+    };
+
+    /**
+     * Determines the index of a repeated node amongst all nodes with the same XPath selector
+     *
+     * @param  {} $node optional jquery element
+     * @return {number}       [description]
+     */
+    FormModel.prototype.determineIndex = function( $node ) {
+        var nodeName;
+        var path;
+        var $family;
+        var that = this;
+
+        if ( $node.length === 1 ) {
+            nodeName = $node.prop( 'nodeName' );
+            path = this.getXPath( $node.get( 0 ), 'instance' );
+            $family = this.$.find( nodeName.replace( /\./g, '\\.' ) ).filter( function() {
+                return path === that.getXPath( this, 'instance' );
+            } );
+            return ( $family.length === 1 ) ? null : $family.index( $node );
+        } else {
+            console.error( 'no node, or multiple nodes, provided to determineIndex function' );
+            return -1;
+        }
+    };
 
     /**
      * Extracts all templates from the model and stores them in a Javascript object poperties as Jquery collections
@@ -674,11 +738,15 @@ define( function( require, exports, module ) {
      */
     FormModel.prototype.extractTemplates = function() {
         var that = this;
+        // TODO: add first-in-series for repeat paths that do not have a template
         // in reverse document order to properly deal with nested repeat templates
         this.getTemplateNodes().reverse().forEach( function( templateEl ) {
             var xPath = that.getXPath( templateEl, 'instance' );
+            console.log( 'creating comment for ', xPath );
+            $( templateEl ).before( document.createComment( that.getRepeatCommentText( xPath ) ) );
             that.templates[ xPath ] = $( templateEl ).removeAttr( 'template' ).removeAttr( 'jr:template' ).remove();
         } );
+        console.log( 'templates', this.templates );
     };
 
     FormModel.prototype.getTemplateNodes = function() {
@@ -1362,33 +1430,6 @@ define( function( require, exports, module ) {
         return vals;
     };
 
-    /**
-     * Determines the index of a repeated node amongst all nodes with the same XPath selector
-     *
-     * @param  {} $node optional jquery element
-     * @return {number}       [description]
-     */
-    Nodeset.prototype.determineIndex = function( $node ) {
-        var nodeName;
-        var path;
-        var $family;
-        var that = this;
-
-        $node = $node || this.get();
-
-        if ( $node.length === 1 ) {
-            nodeName = $node.prop( 'nodeName' );
-            path = this.model.getXPath( $node.get( 0 ), 'instance' );
-            $family = this.model.$.find( nodeName.replace( /\./g, '\\.' ) ).filter( function() {
-                return path === that.model.getXPath( this, 'instance' );
-            } );
-            return ( $family.length === 1 ) ? null : $family.index( $node );
-        } else {
-            console.error( 'no node, or multiple nodes, provided to nodeset.determineIndex' );
-            return -1;
-        }
-    };
-
     // if repeats have not been cloned yet, they are not considered a repeat by this function
     Nodeset.prototype.getClosestRepeat = function() {
         var el = this.get().get( 0 );
@@ -1401,42 +1442,8 @@ define( function( require, exports, module ) {
 
         return ( nodeName === 'instance' ) ? {} : {
             repeatPath: this.model.getXPath( el, 'instance' ),
-            repeatIndex: this.determineIndex( $( el ) )
+            repeatIndex: this.model.determineIndex( $( el ) )
         };
-    };
-
-    // Obtains all the siblings with the same name and itself
-    Nodeset.prototype.getRepeatSeries = function() {
-        var repeatEl = this.get().get( 0 );
-        var checkEl = repeatEl.previousSibling;
-        var nodeName = repeatEl.nodeName;
-        var result = [];
-
-        // first move to the first repeat in the series
-        while ( checkEl ) {
-            // Ignore any sibling text and comment nodes (e.g. whitespace with a newline character)
-            // also deal with repeats that have non-repeat siblings in between them, event though that would be a bug.
-            if ( checkEl.nodeName && checkEl.nodeName === nodeName ) {
-                repeatEl = checkEl;
-            }
-            checkEl = checkEl.previousSibling;
-        }
-
-        // add the first
-        result.push( repeatEl );
-        checkEl = repeatEl.nextSibling;
-
-        // then add all subsequent repeats
-        while ( checkEl ) {
-            // Ignore any sibling text and comment nodes (e.g. whitespace with a newline character)
-            // also deal with repeats that have non-repeat siblings in between them, event though that would be a bug.
-            if ( checkEl.nodeName && checkEl.nodeName === nodeName ) {
-                result.push( checkEl );
-            }
-            checkEl = checkEl.nextSibling;
-        }
-
-        return result;
     };
 
     /**
@@ -1462,7 +1469,7 @@ define( function( require, exports, module ) {
             } );
 
             repeatPath = this.model.getXPath( $dataNode.get( 0 ), 'instance' );
-            repeatIndex = this.determineIndex( $dataNode );
+            repeatIndex = this.model.determineIndex( $dataNode );
             removalEventData = this.model.getRemovalEventData( $dataNode.get( 0 ) );
 
             $dataNode.remove();
