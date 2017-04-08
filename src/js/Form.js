@@ -1757,6 +1757,14 @@ define( function( require, exports, module ) {
                         '<button type="button" disabled class="btn btn-default remove"><i class="icon icon-minus"> </i></button></div>' );
 
                 /**
+                 * The model also requires storing repeat templates for repeats that do not have a jr:template.
+                 * Since the model has no knowledge of which node is a repeat, we do this here.
+                 */
+                model.extractFakeTemplates( $repeatInfos.map( function() {
+                    return this.dataset.name;
+                } ).get() );
+
+                /**
                  * Clone all repeats to serve as templates
                  * in reverse document order to properly deal with nested repeat templates
                  *

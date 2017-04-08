@@ -551,6 +551,7 @@ define( function( require, exports, module ) {
 
     FormModel.prototype.getRepeatCommentEl = function( repeatPath, repeatSeriesIndex ) {
         var xPath = '//comment()[self::comment()="' + this.getRepeatCommentText( repeatPath ) + '"]';
+        console.log( 'getting ', xPath, repeatSeriesIndex );
         return this.evaluate( xPath, 'nodes', null, null, true )[ repeatSeriesIndex ];
     };
 
@@ -570,10 +571,10 @@ define( function( require, exports, module ) {
         var repeatCommentEl;
         var allClonedNodeNames;
         var $templateClone;
-        var jrTemplate = !!this.templates[ repeatPath ];
+        //var jrTemplate;// = !!this.templates[ repeatPath ];
         var firstRepeatInSeries;
         var repeatSeries;
-        var $template = this.templates[ repeatPath ] || this.node( repeatPath, 0 ).get(); // TODO: templates should be populate with non-jr:template repeats
+        var $template = this.templates[ repeatPath ];
         var that = this;
         var enkNs = this.getNamespacePrefix( that.ENKETO_XFORMS_NS );
 
@@ -656,7 +657,7 @@ define( function( require, exports, module ) {
 
             // If part of a merge operation (during form load) where the values will be populated from the record, defaults are not desired.
             // If no jrTemplate is present all values should be cleared as well.
-            if ( merge || !jrTemplate ) {
+            if ( merge ) {
                 $templateClone.find( '*' ).filter( function() {
                     return $( this ).children().length === 0;
                 } ).text( '' );
@@ -707,6 +708,24 @@ define( function( require, exports, module ) {
         return result;
     };
 
+    FormModel.prototype.hasPreviousSiblingSameName = function( el ) {
+        var found = false;
+        var nodeName = el.nodeName;
+        el = el.previousSibling;
+
+        while ( el ) {
+            // Ignore any sibling text and comment nodes (e.g. whitespace with a newline character)
+            // also deal with repeats that have non-repeat siblings in between them, event though that would be a bug.
+            if ( el.nodeName && el.nodeName === nodeName ) {
+                found = true;
+                break;
+            }
+            el = el.previousSibling;
+        }
+        console.debug( 'returning', found );
+        return found;
+    };
+
     /**
      * Determines the index of a repeated node amongst all nodes with the same XPath selector
      *
@@ -742,12 +761,43 @@ define( function( require, exports, module ) {
         // in reverse document order to properly deal with nested repeat templates
         this.getTemplateNodes().reverse().forEach( function( templateEl ) {
             var xPath = that.getXPath( templateEl, 'instance' );
-            console.log( 'creating comment for ', xPath );
-            $( templateEl ).before( document.createComment( that.getRepeatCommentText( xPath ) ) );
-            that.templates[ xPath ] = $( templateEl ).removeAttr( 'template' ).removeAttr( 'jr:template' ).remove();
+            that.addTemplate( xPath, templateEl );
+            templateEl.remove();
+            //that.templates[ xPath ] = $( templateEl ).removeAttr( 'template' ).removeAttr( 'jr:template' ).remove();
         } );
         console.log( 'templates', this.templates );
     };
+
+    FormModel.prototype.extractFakeTemplates = function( repeatPaths ) {
+        var that = this;
+        console.log( 'repeatPaths', repeatPaths );
+        repeatPaths.forEach( function( repeatPath ) {
+            // Filter by elements that are the first in a series. This means that multiple instances of nested repeats
+            // all get a comment insertion point.
+            var nodes = that.evaluate( repeatPath, 'nodes', null, null, true )
+                /*.filter( function( node ) {
+                                return !that.hasPreviousSiblingSameName( node );
+                            } )*/
+                .forEach( function( node ) {
+                    that.addTemplate( repeatPath, node );
+                } );
+        } );
+    };
+
+    FormModel.prototype.addTemplate = function( repeatPath, repeat ) {
+        console.log( 'adding to model template', repeatPath, repeat );
+        if ( !this.hasPreviousSiblingSameName( repeat ) ) {
+            console.log( 'creating comment for ', repeatPath );
+            // Add a comment to the primary instance that serves as an insertion point for each repeat series,
+            $( repeat ).before( document.createComment( this.getRepeatCommentText( repeatPath ) ) );
+        }
+        if ( !this.templates[ repeatPath ] ) {
+            // Add to templates object.
+            this.templates[ repeatPath ] = $( repeat ).clone().removeAttr( 'template' ).removeAttr( 'jr:template' );
+        }
+    };
+
+
 
     FormModel.prototype.getTemplateNodes = function() {
         var jrPrefix = this.getNamespacePrefix( this.JAVAROSA_XFORMS_NS );
