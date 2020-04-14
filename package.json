@@ -69,7 +69,7 @@
         "bootstrap-slider-basic": "3.3.x",
         "bootstrap-timepicker": "0.5.x",
         "enketo-xpathjs": "1.4.0",
-        "jquery": "3.2.x",
+        "jquery": "3.5.0",
         "jquery-touchswipe": "1.6.x",
         "leaflet": "0.7.x",
         "lie": "3.1.x",
